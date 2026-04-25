@@ -71,21 +71,110 @@ def registerManager(conn):
 def registerClient(conn):
     pass
 
+"""
+2. Managers should be able to insert, remove, and update hotels and rooms.
+3. Managers should be able to remove clients from the system.
+4. Managers should be able to input a number k, and the system should return the names
+and emails of the top-k clients based on the number of bookings.
+5. Managers should be able to generate a list of all hotel rooms along with the number
+of bookings for each room.
+6. Managers should be able to generate a list: for every hotel X show the name of X, the
+total number of bookings in X, and the average rating of X.
+7. A manager should be able to input two cities C1 and C2, and the system should return
+the names and emails of clients who have at least one address in C1 and have booked
+a hotel located in C2.
+8. Managers should be able to report the names of problematic local hotels. These are
+hotels located in Chicago with an average rating less than 2, and that have been
+booked by at least two different clients, each of whom has no address in city Chicago.
+9. Managers should be able to report a list showing each client’s name along with the
+total amount they have spent on bookings.
+"""
+
 def managerOperations(conn, ssn):
     while True:
         print("======Manager Operations======")
         print("1. Insert/Remove/Update Hotels or Rooms")
-        print("2. Logout")
+        print("2. Remove Client")
+        print("3. Top-k Clients")
+        print("4. Number of Bookings for Each Room")
+        print("5. Hotel Booking and Rating Summary")
+        print("6. Clients with Addresses in C1 and Bookings in C2")
+        print("7. Problematic Local Hotels")
+        print("8. Total Amount Spent by Each Client")
+        print("9. Logout")
 
         choice = input("Enter your choice: ")
         if choice == '1':
-            managerUpdateHotelRoom(conn, ssn)
-        
+            managerUpdateHotelRoom(conn)
         elif choice == '2':
+            managerRemoveClient(conn)
+        elif choice == '3':
+            managerTopKClients(conn)
+        elif choice == '4':
+            managerNumBookingsEachRoom(conn)
+        elif choice == '5':
+            managerHotelBookingRatingSummary(conn)
+        elif choice == '6':
+            managerClientsC1BookingsC2(conn)
+        elif choice == '7':
+            managerProblematicLocalHotels(conn)
+        elif choice == '8':
+            managerTotalAmountSpent(conn)
+        elif choice == '9':
             print("Logging out...")
             main()
+        
+def managerRemoveClient(conn):
+    print("Please enter the client details as requested below")
+    email = input("Email: ")
 
-def managerUpdateHotelRoom(conn, ssn):
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM Client WHERE email = %s", (email,))
+        client = cur.fetchone()
+        if client:
+            cur.execute("DELETE FROM Booking WHERE client_email = %s", (email,))
+            cur.execute("DELETE FROM Review WHERE client_email = %s", (email,))
+            cur.execute("DELETE FROM ClientAddress WHERE client_email = %s", (email,))
+            cur.execute("DELETE FROM CreditCard WHERE client_email = %s", (email,))
+            cur.execute("DELETE FROM Client WHERE email = %s", (email,))
+            conn.commit()
+            print(f"Client with email {email} removed successfully.")
+        else:
+            print("No client found with this email.")
+
+def managerTopKClients(conn):
+    k = input("Please enter the value of k: ")
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        query = """
+        SELECT name, email, COUNT(booking_id) AS count
+        FROM Client
+        JOIN Booking ON Client.email = Booking.client_email
+        GROUP BY name, email
+        ORDER BY count DESC
+        LIMIT %s;
+        """
+        cur.execute(query, (k,))
+        clients = cur.fetchall()
+        print(f"Top {k} clients based on number of bookings:")
+        for client in clients:
+            print(f"Name: {client['name']}, Email: {client['email']}, Number of Bookings: {client['count']}")
+
+def managerNumBookingsEachRoom(conn):
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        query = """
+        SELECT Room.hotel_id, Room.room_number, COUNT(booking_id) AS count
+        FROM Room
+        JOIN Booking ON Room.hotel_id = Booking.hotel_id AND Room.room_number = Booking.room_number
+        GROUP BY Room.hotel_id, Room.room_number
+        ORDER BY count DESC;
+        """
+        cur.execute(query)
+        rooms = cur.fetchall()
+        print("Number of bookings for each room:")
+        for room in rooms:
+            print(f"Hotel ID: {room['hotel_id']}, Room Number: {room['room_number']}, Number of Bookings: {room['count']}")
+            
+def managerUpdateHotelRoom(conn):
     while True:
         print("======Hotel/Room Management======")
         print("1. Insert Hotel")
@@ -162,11 +251,66 @@ def removeHotel(conn):
         cur.execute("SELECT * FROM Hotel WHERE hotel_id = %s", (id,))
         hotel = cur.fetchone()
         if hotel:
+            cur.execute("DELETE FROM Booking WHERE hotel_id = %s", (id,))
+            cur.execute("DELETE FROM Room WHERE hotel_id = %s", (id,))
+            cur.execute("DELETE FROM Review WHERE hotel_id = %s", (id,))
             cur.execute("DELETE FROM Hotel WHERE hotel_id = %s", (id,))
             conn.commit()
             print(f"Hotel with ID {id} removed successfully.")
         else:
             print("No hotel found with this ID.")
+
+def insertRoom(conn):
+    print("Please enter the room details as requested below")
+    hotel_id = input("Hotel ID: ")
+    room_number = input("Room number: ")
+    windows = input("Windows: ")
+    renovation_year = input("Renovation year: ")
+    access_type = input("Access type: ")
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM Room WHERE hotel_id = %s AND room_number = %s", (hotel_id, room_number))
+        room = cur.fetchone()
+        if room:
+            print("Room with this ID already exists. Please enter a different room ID.")
+        else:
+            cur.execute("INSERT INTO Room (hotel_id, room_number, windows, renovation_year, access_type) VALUES (%s, %s, %s, %s, %s)", (hotel_id, room_number, windows, renovation_year, access_type))
+            conn.commit()
+            print(f"Room with ID {room_number} inserted successfully.")
+
+def updateRoom(conn):
+    print("Please enter the room details as requested below")
+    hotel_id = input("Hotel ID: ")
+    room_number = input("Room number: ")
+    windows = input("Windows: ")
+    renovation_year = input("Renovation year: ")
+    access_type = input("Access type: ")
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM Room WHERE hotel_id = %s AND room_number = %s", (hotel_id, room_number))
+        room = cur.fetchone()
+        if room:
+            cur.execute("UPDATE Room SET windows = %s, renovation_year = %s, access_type = %s WHERE hotel_id = %s AND room_number = %s", (windows, renovation_year, access_type, hotel_id, room_number))
+            conn.commit()
+            print(f"Room with ID {room_number} updated successfully.")
+        else:
+            print("No room found with this ID. Please try again.")
+
+def removeRoom(conn):
+    print("Please enter the room details as requested below")
+    hotel_id = input("Hotel ID: ")
+    room_number = input("Room number: ")
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM Room WHERE hotel_id = %s AND room_number = %s", (hotel_id, room_number))
+        room = cur.fetchone()
+        if room:
+            cur.execute("DELETE FROM Booking WHERE hotel_id = %s AND room_number = %s", (hotel_id, room_number))
+            cur.execute("DELETE FROM Room WHERE hotel_id = %s AND room_number = %s", (hotel_id, room_number))
+            conn.commit()
+            print(f"Room with ID {room_number} removed successfully.")
+        else:
+            print("No room found with this ID.")
 
 def main():
     conn = psycopg2.connect(
