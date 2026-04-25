@@ -1,6 +1,11 @@
 import psycopg2
 import psycopg2.extras 
+import sys
 
+"""
+Notes:
+1. Do we care about the case of a foreign key error, for example an a manager enters an invalid hotel address, do we want to handle this without an exception?
+"""
 def login(conn):
     while True:
         print("Thank you for choosing to login! Please select your role:")
@@ -20,6 +25,7 @@ def register(conn):
         print("Thank you for choosing to register with us! Please select your role:")
         print("1. Manager")
         print("2. Client")
+        print("3. Back to main menu")
         roleChoice = input("Enter your choice: ")
         if roleChoice == '1':
             registerManager(conn)
@@ -66,8 +72,101 @@ def registerClient(conn):
     pass
 
 def managerOperations(conn, ssn):
-    print("Made it here with ssn: ", ssn)
-    return
+    while True:
+        print("======Manager Operations======")
+        print("1. Insert/Remove/Update Hotels or Rooms")
+        print("2. Logout")
+
+        choice = input("Enter your choice: ")
+        if choice == '1':
+            managerUpdateHotelRoom(conn, ssn)
+        
+        elif choice == '2':
+            print("Logging out...")
+            main()
+
+def managerUpdateHotelRoom(conn, ssn):
+    while True:
+        print("======Hotel/Room Management======")
+        print("1. Insert Hotel")
+        print("2. Remove Hotel")
+        print("3. Update Hotel")
+        print("4. Insert Room")
+        print("5. Remove Room")
+        print("6. Update Room")
+        print("7. Back to Manager Operations")
+        print("8. Logout")
+
+        choice = input("Enter your choice: ")
+        if choice == '1':
+            insertHotel(conn)
+        elif choice == '2':
+            removeHotel(conn)
+        elif choice == '3':
+            updateHotel(conn)
+        elif choice == '4':
+            insertRoom(conn)
+        elif choice == '5':
+            removeRoom(conn)
+        elif choice == '6':
+            updateRoom(conn)
+        elif choice == '7':
+            managerOperations(conn)
+        elif choice == '8':
+            print("Logging out...")
+            main()
+
+def insertHotel(conn):
+    print("Please enter the hotel details as requested below")
+    id = input("ID: ")
+    name = input("Name: ")
+    streetName = input("Street name: ")
+    streetNumber = input("Street number: ")
+    city = input("City: ")
+
+    
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM Hotel WHERE hotel_id = %s", (id,))
+        hotel = cur.fetchone()
+        if hotel:
+            print("Hotel with this ID already exists. Please enter a different hotel.")
+        else:
+            cur.execute("INSERT INTO Hotel (hotel_id, name, street_name, number, city) VALUES (%s, %s, %s, %s, %s)", (id, name, streetName, streetNumber, city))
+            conn.commit()
+            print(f"Hotel with ID {id} inserted successfully.")
+
+def updateHotel(conn):
+    print("Please enter the hotel details as requested below")
+    id = input("ID: ")
+    name = input("Name: ")
+    streetName = input("Street name: ")
+    streetNumber = input("Street number: ")
+    city = input("City: ")
+
+    
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM Hotel WHERE hotel_id = %s", (id,))
+        hotel = cur.fetchone()
+        if hotel:
+            cur.execute("UPDATE Hotel SET name = %s, street_name = %s, number = %s, city = %s WHERE hotel_id = %s", (name, streetName, streetNumber, city, id))
+            conn.commit()
+            print(f"Hotel with ID {id} updated successfully.")
+        else:
+            print("No hotel found with this ID. Please try again.")
+    
+def removeHotel(conn):
+    print("Please enter the hotel details as requested below")
+    id = input("ID: ")
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM Hotel WHERE hotel_id = %s", (id,))
+        hotel = cur.fetchone()
+        if hotel:
+            cur.execute("DELETE FROM Hotel WHERE hotel_id = %s", (id,))
+            conn.commit()
+            print(f"Hotel with ID {id} removed successfully.")
+        else:
+            print("No hotel found with this ID.")
 
 def main():
     conn = psycopg2.connect(
@@ -91,7 +190,7 @@ def main():
                 register(conn)
             elif choice == '3':
                 print("Exiting...")
-                break
+                sys.exit()
             else:
                 print("Invalid choice. Please try again.")
     except Exception as e:
