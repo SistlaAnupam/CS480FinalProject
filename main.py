@@ -5,6 +5,7 @@ import sys
 """
 Notes:
 1. Do we care about the case of a foreign key error, for example an a manager enters an invalid hotel address, do we want to handle this without an exception?
+2. Mix up join order in queries if you have to submit code
 """
 def login(conn):
     while True:
@@ -166,14 +167,95 @@ def managerNumBookingsEachRoom(conn):
         FROM Room
         JOIN Booking ON Room.hotel_id = Booking.hotel_id AND Room.room_number = Booking.room_number
         GROUP BY Room.hotel_id, Room.room_number
-        ORDER BY count DESC;
+        ORDER BY Room.hotel_id, Room.room_number ASC;
         """
         cur.execute(query)
         rooms = cur.fetchall()
         print("Number of bookings for each room:")
         for room in rooms:
             print(f"Hotel ID: {room['hotel_id']}, Room Number: {room['room_number']}, Number of Bookings: {room['count']}")
-            
+
+def managerHotelBookingRatingSummary(conn):
+    # lets try an approach without left joins
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        query = """
+        SELECT Hotel.hotel_id, Hotel.name, COUNT(booking_id) AS total_bookings, AVG(rating) AS average_rating
+        FROM Hotel
+        JOIN Booking ON Hotel.hotel_id = Booking.hotel_id
+        JOIN Review ON Hotel.hotel_id = Review.hotel_id
+        GROUP BY Hotel.hotel_id, Hotel.name
+        ORDER BY Hotel.hotel_id ASC;
+        """
+        cur.execute(query)
+        hotels = cur.fetchall()
+        print("Hotel booking and rating summary:")
+        for hotel in hotels:
+            print(f"Hotel ID: {hotel['hotel_id']}, Name: {hotel['name']}, Total Bookings: {hotel['total_bookings']}, Average Rating: {hotel['average_rating']}")
+
+def managerClientsC1BookingsC2(conn):
+    c1 = input("Please enter city C1: ")
+    c2 = input("Please enter city C2: ")
+    
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        query = """
+        SELECT DISTINCT Client.name, Client.email
+        FROM Client
+        JOIN ClientAddress ON Client.email = ClientAddress.client_email
+        JOIN Booking ON Client.email = Booking.client_email
+        JOIN Hotel ON Booking.hotel_id = Hotel.hotel_id
+        WHERE ClientAddress.city = %s AND Hotel.city = %s;
+        """
+        cur.execute(query, (c1, c2))
+        clients = cur.fetchall()
+        print(f"Clients with addresses in {c1} and bookings in {c2}:")
+        for client in clients:
+            print(f"Name: {client['name']}, Email: {client['email']}")
+
+def managerProblematicLocalHotels(conn):
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        query = """
+        SELECT Hotel.name
+        FROM Hotel
+        JOIN Review ON Hotel.hotel_id = Review.hotel_id
+        WHERE Hotel.city = 'Chicago'
+        AND Hotel.hotel_id IN (
+            SELECT Booking.hotel_id
+            FROM Booking
+            JOIN Client ON Booking.client_email = Client.email
+            WHERE NOT EXISTS (
+                SELECT 1 FROM ClientAddress
+                WHERE ClientAddress.client_email = Client.email
+                AND ClientAddress.city = 'Chicago'
+            )
+            GROUP BY Booking.hotel_id
+            HAVING COUNT(DISTINCT Booking.client_email) >= 2
+        )
+        GROUP BY Hotel.hotel_id, Hotel.name
+        HAVING AVG(Review.rating) < 2;
+        """
+        cur.execute(query)
+        hotels = cur.fetchall()
+        print("Problematic local hotels:")
+        for hotel in hotels:
+            print(f"Name: {hotel['name']}")
+
+def managerTotalAmountSpent(conn):
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        query = """
+        SELECT Client.name, SUM((Booking.end_date - Booking.start_date) * Booking.price_per_day) AS total_spent
+        FROM Client
+        JOIN Booking ON Client.email = Booking.client_email
+        GROUP BY Client.name
+        ORDER By Client.name ASC;
+        """
+        cur.execute(query)
+        clients = cur.fetchall()
+        print("Total amount spent by each client:")
+        for client in clients:
+            print(f"Name: {client['name']}, Total Amount Spent: {client['total_spent']}")
+   
+
+
 def managerUpdateHotelRoom(conn):
     while True:
         print("======Hotel/Room Management======")
