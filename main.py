@@ -48,7 +48,17 @@ def loginManager(conn):
     return
 
 def loginClient(conn):
-    pass
+    email = input("Please enter your email to login: ")
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM Client WHERE email = %s", (email,))
+        client = cur.fetchone()
+
+        if client:
+            print(f"Login Successful. Welcome, {client['name']}!")
+            clientOperations(conn, email)
+        else:
+            print("No client found with this email. Please try again.")
 
 def registerManager(conn):
     print("Please enter the requested details")
@@ -70,7 +80,88 @@ def registerManager(conn):
     return
 
 def registerClient(conn):
-    pass
+    print("Please enter the requested client details")
+    name = input("Name: ")
+    email = input("Email: ")
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT * FROM Client WHERE email = %s", (email,))
+        existing_client = cur.fetchone()
+
+        if existing_client:
+            print("Client with this email already exists.")
+            return
+        
+        try:
+            cur.execute(
+                "INSERT INTO Client (email, name) VALUES (%s, %s)", (email, name)
+            )
+
+            num_addresses = int(input("How many addresses would you like to add? "))
+
+            if num_addresses < 1:
+                print("A client must have at least one address.")
+                conn.rollback()
+                return
+            
+            for i in range(num_addresses):
+                print(f"Address {i + 1}:")
+                street_name = input("Street name: ")
+                number = input("Street number: ")
+                city = input("City: ")
+
+                cur.execute("""
+                    INSERT INTO Address (street_name, number, city)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (street_name, number, city) DO NOTHING
+                """, (street_name, number, city))
+
+                cur.execute("""
+                    INSERT INTO ClientAddress (client_email, street_name, number, city)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                """, (email, street_name, number, city))
+
+            num_cards = int(input("How many credit crads would you like to add? "))
+
+            if num_cards < 1:
+                print("A client must have at least one credit card.")
+                conn.rollback()
+                return
+            
+            for i in range(num_cards):
+                print(f"Credit Card {i + 1}:")
+                card_number = input("Card number: ")
+
+                print("Billing address for this card:")
+                billing_street = input("Billing street name: ")
+                billing_number = input("Billing street number: ")
+                billing_city = input("Billing city: ")
+
+                cur.execute("""
+                    INSERT INTO Address (street_name, number, city)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (street_name, number, city) DO NOTHING
+                """, (billing_street, billing_number, billing_city))
+
+                cur.execute("""
+                    INSERT INTO CreditCard (
+                            card_number,
+                            client_email,
+                            billing_street_name,
+                            billing_number,
+                            billing_city
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (card_number, email, billing_street, billing_number, billing_city))
+
+            conn.commit()
+            print("Client registered successfully.")
+            clientOperations(conn, email)
+
+        except Exception as e:
+            conn.rollback()
+            print(f"Registeration failed: {e}")
 
 """
 2. Managers should be able to insert, remove, and update hotels and rooms.
@@ -393,6 +484,201 @@ def removeRoom(conn):
             print(f"Room with ID {room_number} removed successfully.")
         else:
             print("No room found with this ID.")
+
+"""
+2. A client should be able to update their information (except their email), including
+name, addresses, and credit cards.
+"""
+
+def clientOperations(conn, email):
+    while True:
+        print("======Client Operations======")
+        print("1. Update My Information")
+        print("2. Logout")
+
+        choice = input("Enter your choice: ")
+
+        if choice == '1':
+            updateClientInfo(conn, email)
+        elif choice == '2':
+            print("Logging out...")
+            return
+        else:
+            print("Invalid choice. Please try again.")
+
+def updateClientInfo(conn, email):
+    while True:
+        print("======Update Client Information======")
+        print("1. Update Name")
+        print("2. Add Address")
+        print("3. Remove Address")
+        print("4. Add Credit Card")
+        print("5. Remove Credit Card")
+        print("6. Update Credit Card Billing Address")
+        print("7. Back")
+
+        choice = input("Enter your choice: ")
+
+        if choice == '1':
+            updateClientName(conn, email)
+        elif choice == '2':
+            addClientAddress(conn, email)
+        elif choice == '3':
+            removeClientAddress(conn, email)
+        elif choice == '4':
+            addClientCreditCard(conn, email)
+        elif choice == '5':
+            removeClientCreditCard(conn, email)
+        elif choice == '6':
+            updateCreditCardBillingAddress(conn, email)
+        elif choice == '7':
+            return
+        else:
+            print("Invalid choice. Please try again.")
+
+def updateClientName(conn, email):
+    new_name = input("Enter new name: ")
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE Client SET name = %s WHERE email = %s", (new_name, email)
+        )
+        conn.commit()
+        print("Name updated successfully.")
+
+def addClientAddress(conn, email):
+    street_name = input("Street name: ")
+    number = input("Street number: ")
+    city = input("City: ")
+
+    with conn.cursor() as cur:
+        try:
+            cur.execute(""" 
+                INSERT INTO Address (street_name, number, city)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (street_name, number, city) DO NOTHING
+            """, (street_name, number, city))
+
+            cur.execute(""" 
+                INSERT INTO ClientAddress (client_email, street_name, number, city)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
+            """, (email, street_name, number, city))
+
+            conn.commit()
+            print("Address added successfully.")
+
+        except Exception as e:
+            conn.rollback()
+            print(f"Could not add address: {e}")
+
+def removeClientAddress(conn, email):
+    street_name = input("Street name to remove: ")
+    number = input("Street number to remove: ")
+    city = input("City to remove: ")
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            DELETE FROM ClientAddress
+            WHERE client_email = %s
+                    AND street_name = %s
+                    AND number = %s
+                    AND city = %s
+        """, (email, street_name, number, city))
+
+        conn.commit()
+
+        if cur.rowcount > 0:
+            print("Address removed successfully.")
+        else:
+            print("No matching address found for this client.")
+
+def addClientCreditCard(conn, email):
+    card_number = input("Card number: ")
+
+    print("Billing address for this card: ")
+    billing_street = input("Billing street name: ")
+    billing_number = input("Billing street number: ")
+    billing_city = input("Billing city: ")
+
+    with conn.cursor() as cur:
+        try:
+            cur.execute("""
+                INSERT INTO Address (street_name, number, city)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (street_name, number, city) DO NOTHING
+            """, (billing_street, billing_number, billing_city))
+
+            cur.execute("""
+                INSERT INTO CreditCard (
+                        card_number,
+                        client_email,
+                        billing_street_name,
+                        billing_number,
+                        billing_city
+                )
+                VALUES (%s, %s, %s, %s, %s)
+            """, (card_number, email, billing_street, billing_number, billing_city))
+
+            conn.commit()
+            print("Credit card added successfully.")
+
+        except Exception as e:
+            conn.rollback()
+            print(f"Could not add credit card: {e}")
+
+def removeClientCreditCard(conn, email):
+    card_number = input("Card number to remove: ")
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            DELETE FROM Creditcard
+            WHERE card_number = %s
+                AND client_email = %s
+        """, (card_number, email))
+
+        conn.commit()
+
+        if cur.rowcount > 0:
+            print("Credit card removed successfully.")
+        else:
+            print("No matching credit card found for this client.")
+
+def updateCreditCardBillingAddress(conn, email):
+    card_number = input("Card number to update: ")
+
+    print("New billing address: ")
+    billing_street = input("Billing street name: ")
+    billing_number = input("Billing street number: ")
+    billing_city = input("Billing city: ")
+
+    with conn.cursor() as cur:
+        try:
+            cur.execute("""
+                INSERT INTO Address (street_name, number, city)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (street_name, number, city) DO NOTHING
+            """, (billing_street, billing_number, billing_city))
+
+            cur.execute("""
+                UPDATE CreditCard
+                SET billing_street_name = %s,
+                    billing_number = %s,
+                    billing_city = % s
+                WHERE card_number = %s
+                        AND client_email = %s
+            """, (billing_street, billing_number, billing_city, card_number, email))
+
+            conn.commit()
+
+            if cur.rowcount > 0:
+                print("Billing address updated successfully.")
+            else:
+                print("No matching credit card found for this client.")
+
+        except Exception as e:
+            conn.rollback()
+            print(f"Could not update billing address: {e}")
 
 def main():
     conn = psycopg2.connect(
