@@ -758,18 +758,10 @@ def submitReview(conn,email):
    
 
 def main():
-    #conn = psycopg2.connect(
-        #host="localhost",
-        #database="hotel_management",
-        #user="anupamsai",
-        #port="5432"
-    #)
-
     conn = psycopg2.connect(
-        host = "localhost",
-        database = "CS480_Project",
-        user = "postgres",
-        password = "Blue$1705",
+        host="localhost",
+        database="hotel_management",
+        user="anupamsai",
         port="5432"
     )
     
