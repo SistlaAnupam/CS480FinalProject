@@ -494,17 +494,194 @@ def clientOperations(conn, email):
     while True:
         print("======Client Operations======")
         print("1. Update My Information")
-        print("2. Logout")
+        print("2. Search Available Rooms")
+        print("3. Book a Specific Room")
+        print("4. Auto-Book a Room at a Hotel")
+        print("5. Logout")
 
         choice = input("Enter your choice: ")
 
         if choice == '1':
             updateClientInfo(conn, email)
         elif choice == '2':
+            searchAvailableRooms(conn)
+        elif choice == '3':
+            bookRoom(conn, email)
+        elif choice == '4':
+            autoBookRoom(conn, email)
+        elif choice == '5':
             print("Logging out...")
             return
         else:
             print("Invalid choice. Please try again.")
+
+###
+### Helper functions for input validation ###
+###
+def _get_date(prompt):
+    from datetime import datetime
+    while True:
+        val = input(prompt).strip()
+        try:
+            datetime.strptime(val, "%Y-%m-%d")
+            return val
+        except ValueError:
+            print("Invalid date. Please use YYYY-MM-DD format.")
+
+def _get_positive_int(prompt):
+    while True:
+        val = input(prompt).strip()
+        if val.isdigit() and int(val) > 0:
+            return int(val)
+        print("Please enter a positive integer.")
+
+def _get_positive_decimal(prompt):
+    while True:
+        val = input(prompt).strip()
+        try:
+            f = float(val)
+            if f > 0:
+                return f
+            print("Please enter a positive number.")
+        except ValueError:
+            print("Please enter a valid number.")
+### End of helper functions ###
+
+def searchAvailableRooms(conn):
+    start_date = _get_date("Enter start date (YYYY-MM-DD): ")
+    end_date = _get_date("Enter end date (YYYY-MM-DD): ")
+    if start_date > end_date:
+        print("Start date must be before or equal to end date.")
+        return
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        query = """
+        SELECT Hotel.name AS hotel_name, Room.hotel_id, Room.room_number
+        FROM Room
+        JOIN Hotel ON Room.hotel_id = Hotel.hotel_id
+        WHERE NOT EXISTS (
+            SELECT 1 FROM Booking
+            WHERE Booking.hotel_id = Room.hotel_id
+              AND Booking.room_number = Room.room_number
+              AND Booking.start_date <= %s
+              AND Booking.end_date >= %s
+        )
+        ORDER BY Hotel.name, Room.room_number;
+        """
+        cur.execute(query, (end_date, start_date))
+        rooms = cur.fetchall()
+        if rooms:
+            print(f"Available rooms from {start_date} to {end_date}:")
+            for room in rooms:
+                print(f"Hotel: {room['hotel_name']} (ID: {room['hotel_id']}), Room: {room['room_number']}")
+        else:
+            print("No available rooms for that date range.")
+
+def bookRoom(conn, email):
+    hotel_id = _get_positive_int("Hotel ID: ")
+    room_number = _get_positive_int("Room number: ")
+    start_date = _get_date("Start date (YYYY-MM-DD): ")
+    end_date = _get_date("End date (YYYY-MM-DD): ")
+    if start_date > end_date:
+        print("Start date must be before or equal to end date.")
+        return
+    price_per_day = _get_positive_decimal("Price per day: ")
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT 1 FROM Room WHERE hotel_id = %s AND room_number = %s", (hotel_id, room_number))
+        if not cur.fetchone():
+            print("No room found with that hotel ID and room number.")
+            return
+
+        cur.execute("""
+            SELECT 1 FROM Booking
+            WHERE hotel_id = %s AND room_number = %s
+              AND start_date <= %s AND end_date >= %s
+        """, (hotel_id, room_number, end_date, start_date))
+        if cur.fetchone():
+            print("That room is not available for the selected dates.")
+            return
+
+        cur.execute("SELECT COALESCE(MAX(booking_id), 0) + 1 FROM Booking")
+        booking_id = cur.fetchone()[0]
+
+        try:
+            cur.execute("""
+                INSERT INTO Booking (booking_id, client_email, hotel_id, room_number, start_date, end_date, price_per_day)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (booking_id, email, hotel_id, room_number, start_date, end_date, price_per_day))
+            conn.commit()
+            print(f"Room {room_number} at hotel {hotel_id} booked successfully (Booking ID: {booking_id}).")
+        except Exception as e:
+            conn.rollback()
+            print(f"Booking failed: {e}")
+
+def autoBookRoom(conn, email):
+    hotel_id = _get_positive_int("Hotel ID: ")
+    start_date = _get_date("Start date (YYYY-MM-DD): ")
+    end_date = _get_date("End date (YYYY-MM-DD): ")
+    if start_date > end_date:
+        print("Start date must be before or equal to end date.")
+        return
+    price_per_day = _get_positive_decimal("Price per day: ")
+
+    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT 1 FROM Hotel WHERE hotel_id = %s", (hotel_id,))
+        if not cur.fetchone():
+            print("No hotel found with that ID.")
+            return
+
+        cur.execute("""
+            SELECT Room.room_number FROM Room
+            WHERE Room.hotel_id = %s
+              AND NOT EXISTS (
+                SELECT 1 FROM Booking
+                WHERE Booking.hotel_id = Room.hotel_id
+                  AND Booking.room_number = Room.room_number
+                  AND Booking.start_date <= %s
+                  AND Booking.end_date >= %s
+              )
+            LIMIT 1
+        """, (hotel_id, end_date, start_date))
+
+        available = cur.fetchone()
+
+        if available:
+            room_number = available['room_number']
+            cur.execute("SELECT COALESCE(MAX(booking_id), 0) + 1 FROM Booking")
+            booking_id = cur.fetchone()[0]
+            try:
+                cur.execute("""
+                    INSERT INTO Booking (booking_id, client_email, hotel_id, room_number, start_date, end_date, price_per_day)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (booking_id, email, hotel_id, room_number, start_date, end_date, price_per_day))
+                conn.commit()
+                print(f"Booked room {room_number} at hotel {hotel_id} from {start_date} to {end_date} (Booking ID: {booking_id}).")
+            except Exception as e:
+                conn.rollback()
+                print(f"Booking failed: {e}")
+        else:
+            print(f"No available rooms at hotel {hotel_id} for that date range.")
+            cur.execute("""
+                SELECT DISTINCT Hotel.hotel_id, Hotel.name FROM Hotel
+                JOIN Room ON Hotel.hotel_id = Room.hotel_id
+                WHERE Hotel.hotel_id != %s
+                  AND NOT EXISTS (
+                    SELECT 1 FROM Booking
+                    WHERE Booking.hotel_id = Room.hotel_id
+                      AND Booking.room_number = Room.room_number
+                      AND Booking.start_date <= %s
+                      AND Booking.end_date >= %s
+                  )
+                ORDER BY Hotel.name;
+            """, (hotel_id, end_date, start_date))
+            alternatives = cur.fetchall()
+            if alternatives:
+                print("Alternative hotels with availability:")
+                for h in alternatives:
+                    print(f"  Hotel ID: {h['hotel_id']}, Name: {h['name']}")
+            else:
+                print("No alternative hotels are available for that date range either.")
 
 def updateClientInfo(conn, email):
     while True:
