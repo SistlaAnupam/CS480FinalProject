@@ -497,12 +497,10 @@ def clientOperations(conn, email):
         print("2. Search Available Rooms")
         print("3. Book a Specific Room")
         print("4. Auto-Book a Room at a Hotel")
-        print("5. Logout")
-
-
-
-        print("6. View My Bookings")
-        print("7. Submit Review")
+        print("5. View My Bookings")
+        print("6. Submit Review")
+        print("7. Logout")
+        
 
 
         choice = input("Enter your choice: ")
@@ -516,15 +514,12 @@ def clientOperations(conn, email):
         elif choice == '4':
             autoBookRoom(conn, email)
         elif choice == '5':
+            viewBookings(conn,email)
+        elif choice == '6':
+            submitReview(conn,email)
+        elif choice == '7':
             print("Logging out...")
             return
-        
-
-        elif choice == '6':
-            viewBookings(conn,email)
-        elif choice == '7':
-            submitReview(conn,email)
-
         else:
             print("Invalid choice. Please try again.")
 
