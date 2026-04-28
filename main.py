@@ -497,7 +497,11 @@ def clientOperations(conn, email):
         print("2. Search Available Rooms")
         print("3. Book a Specific Room")
         print("4. Auto-Book a Room at a Hotel")
-        print("5. Logout")
+        print("5. View My Bookings")
+        print("6. Submit Review")
+        print("7. Logout")
+        
+
 
         choice = input("Enter your choice: ")
 
@@ -510,6 +514,10 @@ def clientOperations(conn, email):
         elif choice == '4':
             autoBookRoom(conn, email)
         elif choice == '5':
+            viewBookings(conn,email)
+        elif choice == '6':
+            submitReview(conn,email)
+        elif choice == '7':
             print("Logging out...")
             return
         else:
@@ -856,6 +864,70 @@ def updateCreditCardBillingAddress(conn, email):
         except Exception as e:
             conn.rollback()
             print(f"Could not update billing address: {e}")
+
+def viewBookings(conn,email):
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute("""
+                        SELECT Hotel.name AS hotel_name, Room.room_number, Booking.start_date, Booking.end_date,
+                            (Booking.price_per_day * (Booking.end_date - Booking.start_date)) AS total_cost
+                        FROM Booking 
+                        JOIN Room
+                            ON Booking.hotel_id = Room.hotel_id 
+                            AND Booking.room_number = Room.room_number
+                        JOIN Hotel 
+                            ON Room.hotel_id = Hotel.hotel_id
+                        WHERE Booking.client_email = %s
+
+                        """, (email,))
+            
+            Bookings = cur.fetchall()
+
+            if not Bookings:
+                print("No bookings found.")
+                return
+            
+            for Booking in Bookings:
+                print(f"Hotel: {Booking['hotel_name']}, Room: {Booking['room_number']}, ")
+                print(f"From: {Booking['start_date']} To: {Booking['end_date']},")
+                print(f"Total Cost: {Booking['total_cost']}")
+    except Exception as e:
+        print(f"Error retrieving bookings: {e}")
+
+def submitReview(conn,email):
+    try:
+        hotel_id = input("Enter hotel ID: ")
+        message = input("Enter your review: ")
+        rating = input("Enter rating from 0 to 10: ")
+
+        with conn.cursor() as cur:
+            cur.execute("""
+                        SELECT 1
+                        FROM Booking
+                        WHERE client_email = %s AND hotel_id = %s
+                        LIMIT 1;
+                        """, (email,hotel_id))
+            
+            if cur.fetchone() is None:
+                print("Error: You cannot review a hotel you haven't stayed at.")
+                return
+            cur.execute("SELECT COALESCE(MAX(review_id), 0) + 1 FROM Review")
+            review_id = cur.fetchone()[0]
+            
+            cur.execute("""
+                        INSERT INTO REVIEW (hotel_id, review_id, client_email, message, rating)
+                        VALUES (%s,%s,%s,%s,%s)
+                        """, (hotel_id,review_id,email,message,rating))
+            conn.commit()
+            print("Review was submitted successfully.")
+
+    except Exception as e:
+        conn.rollback()
+        print(f"Error submitting review: {e}")
+
+
+
+   
 
 def main():
     conn = psycopg2.connect(
