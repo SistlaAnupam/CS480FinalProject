@@ -42,7 +42,7 @@ def loginManager(conn):
         manager = cur.fetchone()
         if manager:
             print(f"Login Successful. Welcome, {manager['name']}!")
-            managerOperations(conn, ssn)
+            managerOperations(conn)
         else:
             print("No manager found with this SSN. Please try again.")
     return
@@ -76,7 +76,7 @@ def registerManager(conn):
             cur.execute("INSERT INTO Manager (name, email, ssn) VALUES (%s, %s, %s)", (name, email, ssn))
             conn.commit()
             print(f"Manager with SSN {ssn} registered successfully.")
-            managerOperations(conn, ssn)
+            managerOperations(conn)
     return
 
 def registerClient(conn):
@@ -182,7 +182,7 @@ booked by at least two different clients, each of whom has no address in city Ch
 total amount they have spent on bookings.
 """
 
-def managerOperations(conn, ssn):
+def managerOperations(conn):
     while True:
         print("======Manager Operations======")
         print("1. Insert/Remove/Update Hotels or Rooms")
@@ -267,21 +267,33 @@ def managerNumBookingsEachRoom(conn):
             print(f"Hotel ID: {room['hotel_id']}, Room Number: {room['room_number']}, Number of Bookings: {room['count']}")
 
 def managerHotelBookingRatingSummary(conn):
-    # lets try an approach without left joins
     with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         query = """
-        SELECT Hotel.hotel_id, Hotel.name, COUNT(booking_id) AS total_bookings, AVG(rating) AS average_rating
+        WITH numberOfBookings AS (
+            SELECT hotel_id, COUNT(*) AS bookings
+            FROM Booking
+            GROUP BY hotel_id
+        ),
+        avgRatings AS (
+            SELECT hotel_id, AVG(rating) AS avg
+            FROM Review
+            GROUP BY hotel_id
+        )
+        SELECT 
+            Hotel.hotel_id,
+            Hotel.name,
+            COALESCE(numberOfBookings.bookings, 0) AS bookings,
+            avgRatings.avg
         FROM Hotel
-        JOIN Booking ON Hotel.hotel_id = Booking.hotel_id
-        JOIN Review ON Hotel.hotel_id = Review.hotel_id
-        GROUP BY Hotel.hotel_id, Hotel.name
+        LEFT JOIN numberOfBookings ON Hotel.hotel_id = numberOfBookings.hotel_id
+        LEFT JOIN avgRatings ON Hotel.hotel_id = avgRatings.hotel_id
         ORDER BY Hotel.hotel_id ASC;
         """
         cur.execute(query)
         hotels = cur.fetchall()
         print("Hotel booking and rating summary:")
         for hotel in hotels:
-            print(f"Hotel ID: {hotel['hotel_id']}, Name: {hotel['name']}, Total Bookings: {hotel['total_bookings']}, Average Rating: {hotel['average_rating']}")
+            print(f"Hotel ID: {hotel['hotel_id']}, Name: {hotel['name']}, Total Bookings: {hotel['bookings']}, Average Rating: {hotel['avg']}")
 
 def managerClientsC1BookingsC2(conn):
     c1 = input("Please enter city C1: ")
@@ -291,8 +303,8 @@ def managerClientsC1BookingsC2(conn):
         query = """
         SELECT DISTINCT Client.name, Client.email
         FROM Client
-        JOIN ClientAddress ON Client.email = ClientAddress.client_email
         JOIN Booking ON Client.email = Booking.client_email
+        JOIN ClientAddress ON Client.email = ClientAddress.client_email
         JOIN Hotel ON Booking.hotel_id = Hotel.hotel_id
         WHERE ClientAddress.city = %s AND Hotel.city = %s;
         """
@@ -305,25 +317,44 @@ def managerClientsC1BookingsC2(conn):
 def managerProblematicLocalHotels(conn):
     with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         query = """
-        SELECT Hotel.name
-        FROM Hotel
-        JOIN Review ON Hotel.hotel_id = Review.hotel_id
-        WHERE Hotel.city = 'Chicago'
-        AND Hotel.hotel_id IN (
-            SELECT Booking.hotel_id
+        WITH allClients AS (
+            SELECT Client.email
+            FROM Client
+        ),
+        chicagoClients AS (
+            SELECT ClientAddress.client_email AS email
+            FROM ClientAddress
+            WHERE ClientAddress.city = 'Chicago'
+        ),
+        nonChicagoClients AS (
+            SELECT email FROM allClients
+            EXCEPT
+            SELECT email FROM chicagoClients
+        ),
+        bookedByNonChicago AS (
+            SELECT Booking.hotel_id, COUNT(DISTINCT Booking.client_email) AS nonChicagoBookers
             FROM Booking
-            JOIN Client ON Booking.client_email = Client.email
-            WHERE NOT EXISTS (
-                SELECT 1 FROM ClientAddress
-                WHERE ClientAddress.client_email = Client.email
-                AND ClientAddress.city = 'Chicago'
-            )
+            JOIN nonChicagoClients ON Booking.client_email = nonChicagoClients.email
             GROUP BY Booking.hotel_id
             HAVING COUNT(DISTINCT Booking.client_email) >= 2
+        ),
+        chicagoHotels AS (
+            SELECT Hotel.hotel_id, Hotel.name
+            FROM Hotel
+            WHERE Hotel.city = 'Chicago'
+        ),
+        lowRatedChicagoHotels AS (
+            SELECT chicagoHotels.hotel_id, chicagoHotels.name
+            FROM chicagoHotels
+            JOIN Review ON chicagoHotels.hotel_id = Review.hotel_id
+            GROUP BY chicagoHotels.hotel_id, chicagoHotels.name
+            HAVING AVG(Review.rating) < 2
         )
-        GROUP BY Hotel.hotel_id, Hotel.name
-        HAVING AVG(Review.rating) < 2;
+        SELECT lowRatedChicagoHotels.name
+        FROM lowRatedChicagoHotels
+        JOIN bookedByNonChicago ON lowRatedChicagoHotels.hotel_id = bookedByNonChicago.hotel_id;
         """
+
         cur.execute(query)
         hotels = cur.fetchall()
         print("Problematic local hotels:")
@@ -333,7 +364,7 @@ def managerProblematicLocalHotels(conn):
 def managerTotalAmountSpent(conn):
     with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         query = """
-        SELECT Client.name, SUM((Booking.end_date - Booking.start_date) * Booking.price_per_day) AS total_spent
+        SELECT Client.name, SUM((Booking.end_date - Booking.start_date) * Booking.price_per_day) AS total
         FROM Client
         JOIN Booking ON Client.email = Booking.client_email
         GROUP BY Client.name
@@ -343,7 +374,7 @@ def managerTotalAmountSpent(conn):
         clients = cur.fetchall()
         print("Total amount spent by each client:")
         for client in clients:
-            print(f"Name: {client['name']}, Total Amount Spent: {client['total_spent']}")
+            print(f"Name: {client['name']}, Total Amount Spent: {client['total']}")
    
 
 

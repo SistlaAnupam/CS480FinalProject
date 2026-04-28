@@ -1,0 +1,154 @@
+CS480 Hotel Management Application - Testing Steps
+====================================================
+Run clear.sql then seed.sql before starting.
+
+
+----------------------------------------------------
+MANAGER TESTS
+----------------------------------------------------
+
+Step 1 - Manager login (Alice)
+Input SSN: 111111111
+Expected: welcome message with name "Alice Johnson"
+
+Step 2 - Manager login failure
+Input SSN: 999999999
+Expected: error message saying no manager found
+
+Step 3 - Add a hotel
+Name: "Miami Beach Resort"
+Address: Ocean Dr, 100, Miami
+Expected: success confirmation
+
+Step 4 - Add a room to that hotel
+Hotel: Miami Beach Resort, Room: 101
+Windows: 3, Renovation year: 2023, Access: elevator
+Expected: success
+
+Step 5 - Update a hotel
+Change name of Miami Beach Resort to "Miami Grand Resort"
+Expected: success
+
+Step 6 - Remove a room
+Remove room 101 from Miami Grand Resort
+Expected: success, room no longer appears in hotel listings
+
+Step 7 - Top-k clients (k=2)
+Expected output (ordered by bookings):
+    Jane Smith  jane@test.com  - 2 bookings
+    John Doe    john@test.com  - 1 booking
+    (Tom also has 1 booking, John and Tom may appear in either order)
+
+Step 8 - All rooms with booking counts
+Expected: every room listed, most showing 0 bookings except:
+    Hotel 1, Room 101 - 1 booking
+    Hotel 1, Room 102 - 1 booking
+    Hotel 3, Room 301 - 1 booking
+    Hotel 3, Room 302 - 1 booking
+
+Step 9 - Hotel stats
+Expected:
+    Grand Chicago Hotel  - 2 bookings, avg rating: NULL
+    NYC Plaza            - 0 bookings, avg rating: NULL
+    Windy City Hostel    - 2 bookings, avg rating: 0.5
+    Miami Grand Resort   - 0 bookings, avg rating: NULL
+
+Step 10 - City pair query
+C1: Boston, C2: Chicago
+Expected: Jane Smith (jane@test.com)
+    - Jane has a Boston address and booked Hotel 1 (Chicago)
+    - John should NOT appear (Chicago address, not Boston)
+    - Tom should NOT appear (no Chicago booking)
+
+Step 11 - Problematic Chicago hotels
+Expected: Windy City Hostel
+    - Located in Chicago
+    - Avg rating 0.5 (< 2)
+    - Booked by Jane (Boston) and Tom (Seattle), neither has a Chicago address
+    - Grand Chicago Hotel should NOT appear (no reviews, no qualifying pattern)
+
+Step 12 - Client spending report
+Expected:
+    John Doe    - $750.00   (5 nights * $150)
+    Jane Smith  - $760.00   (4 nights * $150 + 2 nights * $80)
+    Tom Green   - $160.00   (2 nights * $80)
+
+Step 13 - Remove a client
+First register a throwaway client through the application (see Step 16),
+then come back and remove them here.
+Expected: client no longer appears in any listing
+
+
+----------------------------------------------------
+CLIENT TESTS
+----------------------------------------------------
+
+Step 14 - Client login (John)
+Input email: john@test.com
+Expected: welcome message with name "John Doe"
+
+Step 15 - Client login failure
+Input email: nobody@test.com
+Expected: error saying no client found
+
+Step 16 - Register new client (Carol)
+Name: Carol White
+Email: carol@test.com
+Address: Park Ave, 200, New York
+Credit card: 4999999999999999, billing at same address
+Expected: success
+(This client is also used for Step 13)
+
+Step 17 - Update client info
+Login as John. Change name to "Jonathan Doe"
+Expected: name updates successfully
+Then attempt to change email - application should block this
+
+Step 18 - Search available rooms
+Input: 2026-06-01 to 2026-06-05 (no conflicts)
+Expected: all rooms listed as available across all hotels
+
+Then try: 2026-01-10 to 2026-01-13
+Expected: Room 101 at Hotel 1 should NOT appear (overlaps John's existing booking)
+
+Step 19 - Book a specific room
+Login as John. Book Hotel 2, Room 201 from 2026-06-01 to 2026-06-05
+Expected: success, new booking appears in Step 21
+
+Step 20 - Book an already-taken room
+Try to book Hotel 2, Room 201 for 2026-06-03 to 2026-06-07
+(overlaps with booking from Step 19)
+Expected: error saying the room is unavailable for those dates
+
+Step 21 - View bookings
+Login as John.
+Expected: two bookings appear:
+    Hotel 1, Room 101 (January)
+    Hotel 2, Room 201 (June)
+    Both showing hotel names and costs
+
+Step 22 - Auto-book
+Login as John. Hotel: Hotel 1, Dates: 2026-07-01 to 2026-07-03
+Expected: system picks an available room (102 or 103) and confirms
+booking with room number, hotel name, and dates
+
+Step 23 - Auto-book with fallback
+Hotel: Miami Grand Resort, Dates: 2026-08-01 to 2026-08-03
+(room was deleted in Step 6, so no rooms available)
+Expected: message saying no room is available at that hotel,
+followed by a list of alternative hotels with availability in that range
+
+Step 24 - Submit a review (valid)
+Login as John. Review Hotel 1 (he has a booking there)
+Rating: 8, Message: "Great stay, loved the location."
+Expected: success
+
+Step 25 - Submit a review (invalid)
+Login as John. Attempt to review Hotel 3 (no booking there)
+Expected: review is rejected
+
+Step 26 - Re-run problematic hotels query (manager)
+After Step 24 adds John's rating of 8 to Hotel 1, re-run the query.
+Expected: Hotel 1 still does NOT appear
+    (John has a Chicago address so he does not count toward the condition)
+    Windy City Hostel should still appear unchanged
