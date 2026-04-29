@@ -1,6 +1,24 @@
+"""
+Hotel Management System
+Team Members: Anupam Sai Sistla, Jacob Woloch, Ashika Shekhar, Riya Gandhi
+
+Steps to run the program:
+1. Ensure you have Python installed on your system.
+2. Install psycopg2 library if you haven't already by running: pip install psycopg2
+3. Set up your PostgreSQL connection (make sure to update credentials in main)
+4. Run database schema in CS480ProjectSchema.sql to create necessary tables
+5. Run the program using: python main.py
+
+Note: The github repository for this project is available at - https://github.com/SistlaAnupam/CS480FinalProject
+"""
+
+
 import psycopg2
 import psycopg2.extras 
 import sys
+
+class LogoutException(Exception):
+    pass
 
 def login(conn):
     while True:
@@ -50,7 +68,7 @@ def loginManager(conn):
         cur.execute("SELECT * FROM Manager WHERE ssn = %s", (ssn,))
         manager = cur.fetchone()
         if manager:
-            print(f"Login Successful! Welcome, {manager['name']}!")
+            print(f"Login Successful. Welcome, {manager['name']}!")
             print()
             managerOperations(conn)
         else:
@@ -70,7 +88,7 @@ def loginClient(conn):
         client = cur.fetchone()
 
         if client:
-            print(f"Login Successful! Welcome, {client['name']}!")
+            print(f"Login Successful. Welcome, {client['name']}!")
             print()
             clientOperations(conn, email)
         else:
@@ -123,7 +141,7 @@ def registerClient(conn):
                 "INSERT INTO Client (email, name) VALUES (%s, %s)", (email, name)
             )
             print("---------------------------------------------")
-            num_addresses = int(input("How many addresses would you like to add? "))
+            num_addresses = int(input("How many addresses would you like to add? (Choose a number): "))
 
             if num_addresses < 1:
                 print("A client must have at least one address.")
@@ -151,7 +169,7 @@ def registerClient(conn):
                 """, (email, street_name, number, city))
 
             print("---------------------------------------------")
-            num_cards = int(input("How many credit cards would you like to add? "))
+            num_cards = int(input("How many credit cards would you like to add? (Choose a number): "))
 
             if num_cards < 1:
                 print("A client must have at least one credit card.")
@@ -162,8 +180,9 @@ def registerClient(conn):
             for i in range(num_cards):
                 print(f"Credit Card {i + 1}:")
                 card_number = input("   Card number: ")
-
-                print("   Billing address for this card:")
+                print()
+                print("   Billing address for this card:-")
+                print()
                 billing_street = input("   Billing street name: ")
                 billing_number = input("   Billing street number: ")
                 billing_city = input("   Billing city: ")
@@ -189,12 +208,12 @@ def registerClient(conn):
             conn.commit()
             print("Client registered successfully!")
             print()
-            clientOperations(conn, email)
 
         except Exception as e:
             conn.rollback()
             print(f"Registration failed: {e}")
             print()
+        clientOperations(conn, email)
 
 def managerOperations(conn):
     while True:
@@ -232,7 +251,7 @@ def managerOperations(conn):
         elif choice == '9':
             print("Logging out...")
             print()
-            return
+            raise LogoutException
         else:
             print("Invalid choice. Please try again.")
             print()
@@ -332,7 +351,8 @@ def managerHotelBookingRatingSummary(conn):
         cur.execute(query)
         hotels = cur.fetchall()
         for hotel in hotels:
-            print(f"Hotel ID: {hotel['hotel_id']}, Name: {hotel['name']}, Total Bookings: {hotel['bookings']}, Average Rating: {hotel['avg']}")
+            avg = f"{hotel['avg']:.2f}" if hotel['avg'] is not None else "No ratings"
+            print(f"Hotel ID: {hotel['hotel_id']}, Name: {hotel['name']}, Total Bookings: {hotel['bookings']}, Average Rating: {avg}")
         print()
 
 def managerClientsC1BookingsC2(conn):
@@ -416,11 +436,11 @@ def managerTotalAmountSpent(conn):
     print("====================================================")
     with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         query = """
-        SELECT Client.name, SUM((Booking.end_date - Booking.start_date) * Booking.price_per_day) AS total
+        SELECT Client.name, Client.email, SUM((Booking.end_date - Booking.start_date) * Booking.price_per_day) AS total
         FROM Client
         JOIN Booking ON Client.email = Booking.client_email
-        GROUP BY Client.name
-        ORDER By Client.name ASC;
+        GROUP BY Client.name, Client.email
+        ORDER BY total DESC;
         """
         cur.execute(query)
         clients = cur.fetchall()
@@ -458,11 +478,11 @@ def managerUpdateHotelRoom(conn):
         elif choice == '6':
             updateRoom(conn)
         elif choice == '7':
-            managerOperations(conn)
+            return
         elif choice == '8':
             print("Logging out...")
             print()
-            return
+            raise LogoutException
 
 def insertHotel(conn):
     print("====================================================")
@@ -490,7 +510,7 @@ def insertHotel(conn):
 
         cur.execute("INSERT INTO Hotel (hotel_id, name, street_name, number, city) VALUES (%s, %s, %s, %s, %s)", (id, name, streetName, streetNumber, city))
         conn.commit()
-        print(f"Hotel with ID {id} inserted successfully!")
+        print(f"Hotel with ID: {id} inserted successfully!")
         print()
 
 def updateHotel(conn):
@@ -520,7 +540,7 @@ def updateHotel(conn):
 
         cur.execute("UPDATE Hotel SET name = %s, street_name = %s, number = %s, city = %s WHERE hotel_id = %s", (name, streetName, streetNumber, city, id))
         conn.commit()
-        print(f"Hotel with ID {id} updated successfully!")
+        print(f"Hotel with ID: {id} updated successfully!")
         print()
     
 def removeHotel(conn):
@@ -539,7 +559,7 @@ def removeHotel(conn):
             cur.execute("DELETE FROM Review WHERE hotel_id = %s", (id,))
             cur.execute("DELETE FROM Hotel WHERE hotel_id = %s", (id,))
             conn.commit()
-            print(f"Hotel with ID {id} removed successfully!")
+            print(f"Hotel with ID: {id} removed successfully!")
             print()
         else:
             print("No hotel with this ID found.")
@@ -565,7 +585,7 @@ def insertRoom(conn):
         else:
             cur.execute("INSERT INTO Room (hotel_id, room_number, windows, renovation_year, access_type) VALUES (%s, %s, %s, %s, %s)", (hotel_id, room_number, windows, renovation_year, access_type))
             conn.commit()
-            print(f"Room with ID {room_number} inserted successfully!")
+            print(f"Room with ID: {room_number} inserted successfully!")
             print()
 
 def updateRoom(conn):
@@ -586,7 +606,7 @@ def updateRoom(conn):
         if room:
             cur.execute("UPDATE Room SET windows = %s, renovation_year = %s, access_type = %s WHERE hotel_id = %s AND room_number = %s", (windows, renovation_year, access_type, hotel_id, room_number))
             conn.commit()
-            print(f"Room with ID {room_number} updated successfully!")
+            print(f"Room with ID: {room_number} updated successfully!")
             print()
         else:
             print("No room found with this ID. Please try again.")
@@ -607,7 +627,7 @@ def removeRoom(conn):
             cur.execute("DELETE FROM Booking WHERE hotel_id = %s AND room_number = %s", (hotel_id, room_number))
             cur.execute("DELETE FROM Room WHERE hotel_id = %s AND room_number = %s", (hotel_id, room_number))
             conn.commit()
-            print(f"Room with ID {room_number} removed successfully!")
+            print(f"Room with ID: {room_number} removed successfully!")
             print()
         else:
             print("No room found with this ID.")
@@ -644,7 +664,7 @@ def clientOperations(conn, email):
         elif choice == '7':
             print("Logging out...")
             print()
-            return
+            raise LogoutException
         else:
             print("Invalid choice. Please try again.")
             print()
@@ -728,9 +748,9 @@ def bookRoom(conn, email):
     room_number = _get_positive_int("Room number: ")
     start_date = _get_date("Start date (YYYY-MM-DD): ")
     end_date = _get_date("End date (YYYY-MM-DD): ")
-    print()
 
     if start_date > end_date:
+        print()
         print("Start date must be before or equal to end date.")
         print()
         return
@@ -763,7 +783,10 @@ def bookRoom(conn, email):
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """, (booking_id, email, hotel_id, room_number, start_date, end_date, price_per_day))
             conn.commit()
-            print(f"Room {room_number} at hotel {hotel_id} booked successfully (Booking ID: {booking_id})!")
+
+            cur.execute("SELECT name FROM Hotel WHERE hotel_id = %s", (hotel_id,))
+            hotel_name = cur.fetchone()['name']
+            print(f"Room {room_number} at Hotel: {hotel_name}, (ID: {hotel_id}), booked successfully (Booking ID: {booking_id})!")
             print()
         except Exception as e:
             conn.rollback()
@@ -944,7 +967,7 @@ def removeClientAddress(conn, email):
         cur.execute("SELECT COUNT(*) FROM ClientAddress WHERE client_email = %s", (email,))
 
         if cur.fetchone()[0] <= 1:
-            print("You must have at least one address on file.")
+            print("You must have at least one address (for both contact and billing) on file.")
             print()
             return
         
@@ -1170,9 +1193,17 @@ def main():
             choice = input("Enter your choice: ")
             print()
             if choice == '1':
-                login(conn)
+                try:
+                    login(conn)
+                except LogoutException:
+                    print("Logged out successfully.")
+                    print()
             elif choice == '2':
-                register(conn)
+                try:
+                    register(conn)
+                except LogoutException:
+                    print("Logged out successfully.")
+                    print()
             elif choice == '3':
                 print("Exiting...")
                 print()
@@ -1180,9 +1211,12 @@ def main():
             else:
                 print("Invalid choice. Please try again.")
                 print()
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    except KeyboardInterrupt:
         print()
+        print("\nExiting...")
+        print()
+    finally:
+        conn.close()
     return
 
 if __name__ == "__main__":
